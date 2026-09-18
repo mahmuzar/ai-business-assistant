@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  # --- Jaeger (Tracing) ---
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    container_name: ai-assistant-jaeger
+    ports:
+      - "16686:16686" # UI
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - observability
+
+  # --- Prometheus (Metrics) ---
+  prometheus:
+    image: prom/prometheus:v3.13.3
+    container_name: ai-assistant-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    networks:
+      - observability
+
+  # --- Loki (Logs) ---
+  # --- Loki (Logs) ---
+  loki:
+    image: grafana/loki:3.7.7
+    container_name: ai-assistant-loki
+    ports:
+      - "3100:3100"
+    networks:
+      - observability
+
+  # --- Grafana (Visualization) ---
+  grafana:
+    image: grafana/grafana:13.2.2
+    container_name: ai-assistant-grafana
+    ports:
+      - "3001:3000" # 3001, чтобы не конфликтовать с твоим API на 3000
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+      - loki
+      - jaeger
+    networks:
+      - observability
+
+volumes:
+  prometheus-data:
+  loki-data:
+  grafana-data:
+
+networks:
+  observability:
+    driver: bridge
