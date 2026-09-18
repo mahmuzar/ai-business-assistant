@@ -2,13 +2,28 @@ import { Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { trace } from '@opentelemetry/api';
 import { Result } from '@shared/kernel/index.js';
-import { User } from '@modules/users/domain/user.js';
-import { UserRepository } from '@modules/users/domain/user.repository.js';
+import { User, UserRepository } from '@modules/users/domain/index.js';
+import { PrismaUserMapper } from '@modules/users/index.js';
+import { UserRecord } from '../mappers/user.mapper.js';
+import { PrismaService } from '../../../../database/prisma.service.js';
 
 @Injectable()
 export class PrismaUserRepository implements UserRepository {
-  constructor(private readonly logger: PinoLogger) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly logger: PinoLogger,
+    private readonly mapper: PrismaUserMapper
+  ) {
     this.logger.setContext(PrismaUserRepository.name);
+  }
+
+  private mapToDomain(record: UserRecord): User {
+    return User.reconstitute({
+      id: record.id,
+      telegramId: record.telegramId,
+      username: record.username, // null из БД -> undefined для домена
+      status: record.status,
+    });
   }
 
   async save(user: User): Promise<Result<void>> {
@@ -16,17 +31,16 @@ export class PrismaUserRepository implements UserRepository {
     const span = tracer.startSpan('PrismaUserRepository.save');
 
     try {
-      // Обогащаем спан контекстом для Jaeger
       span.setAttribute('user.id', user.id);
-
       this.logger.info({ userId: user.id }, 'Saving user to database');
 
-      // TODO: Здесь будет реальный вызов Prisma
-      // await this.prisma.user.create(...)
+      const data = this.mapper.toPersistence(user);
+      await this.prisma.user.create({ data: data });
 
       return Result.success(undefined);
     } catch (error) {
       span.recordException(error as Error);
+      this.logger.error({ error, userId: user.id }, 'Failed to save user');
       throw error;
     } finally {
       span.end();
@@ -41,9 +55,11 @@ export class PrismaUserRepository implements UserRepository {
       span.setAttribute('user.id', id);
       this.logger.debug({ userId: id }, 'Finding user by ID');
 
-      // TODO: Реальная логика поиска
+      const record = await this.prisma.user.findUnique({ where: { id } });
 
-      return Result.success(null);
+      if (!record) return Result.success(null);
+
+      return Result.success(this.mapToDomain(record));
     } catch (error) {
       span.recordException(error as Error);
       throw error;
@@ -60,9 +76,11 @@ export class PrismaUserRepository implements UserRepository {
       span.setAttribute('user.telegramId', telegramId);
       this.logger.debug({ telegramId }, 'Finding user by Telegram ID');
 
-      // TODO: Реальная логика поиска
+      const record = await this.prisma.user.findUnique({ where: { telegramId } });
 
-      return Result.success(null);
+      if (!record) return Result.success(null);
+
+      return Result.success(this.mapToDomain(record));
     } catch (error) {
       span.recordException(error as Error);
       throw error;
@@ -79,7 +97,7 @@ export class PrismaUserRepository implements UserRepository {
       span.setAttribute('user.id', id);
       this.logger.info({ userId: id }, 'Deleting user');
 
-      // TODO: Реальная логика удаления
+      await this.prisma.user.delete({ where: { id } });
 
       return Result.success(undefined);
     } catch (error) {

@@ -6,7 +6,7 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
   });
-
+  
   app.enableCors();
   
   await app.listen(3000);

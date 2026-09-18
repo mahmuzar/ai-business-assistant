@@ -4,16 +4,27 @@ import { LoggerModule } from 'nestjs-pino';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { getOtelContext } from './shared/logging/otel-context.js'; // <-- Импорт утилиты
+import { ConfigModule } from '@nestjs/config';
+import { DatabaseModule } from './database/database.module.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 @Module({
   imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,       // Делаем доступным во всех модулях без импорта
+      envFilePath: [
+        '.env.local',       // Приоритет 1: локальные секреты
+        '.env',             // Приоритет 2: основной конфиг
+      ],
+      cache: true,          // Кэшируем переменные (не перечитываем при каждом get)
+      validate: undefined,  // Можно добавить Joi/Zod схему валидации позже
+    }),
     LoggerModule.forRoot({
       pinoHttp: {
         // mixin вызывается синхронно при каждом логе в основном потоке
         mixin: () => getOtelContext(),
-        
+
         transport: {
           targets: [
             {
@@ -43,7 +54,8 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
         // hooks.logMethod удален, так как mixin делает то же самое надежнее
       },
     }),
+    DatabaseModule,
     UsersModule,
   ],
 })
-export class AppModule {}
+export class AppModule { }

@@ -1,7 +1,9 @@
 import { Entity, Result, DomainEvent } from '@shared/kernel/index.js';
 import { Email } from './email.js';
 import { UserCreatedEvent } from './events/user-created.event.js';
+import { UserRecord } from '../infrastructure/mappers/user.mapper.js';
 
+export type status = 'active' | 'banned' | 'deleted';
 export interface UserProps {
   id: string;
   telegramId: number;
@@ -23,6 +25,15 @@ export class User extends Entity<string> {
     this._email = props.email;
     this._username = props.username;
     this._status = props.status;
+  }
+
+  static reconstitute(data: UserRecord) {
+    return new User({
+      id: data.id,
+      telegramId: data.telegramId,
+      username: data.username ?? undefined,
+      status: data.status as status,
+    });
   }
 
   get telegramId(): number { return this._telegramId; }

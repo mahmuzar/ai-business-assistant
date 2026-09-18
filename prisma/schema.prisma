@@ -1,0 +1,19 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // url убран - теперь управляется через prisma.config.ts и .env
+}
+
+model User {
+  id         String   @id @default(uuid())
+  telegramId Int      @unique
+  username   String?
+  status     String   @default("active")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("users")
+}
