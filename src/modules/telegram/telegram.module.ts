@@ -4,6 +4,7 @@ import { UpdateDispatcherService } from './application/handlers/update-dispatche
 import { StartCommandHandler } from './application/handlers/start-command.handler.js';
 import { TelegramClientService } from './infrastructure/client.service.js';
 import { UsersModule } from '@modules/users/users.module.js';
+import { TextMessageHandler } from './application/handlers/text-message.handler.js';
 
 @Module({
   imports: [UsersModule],
@@ -12,6 +13,7 @@ import { UsersModule } from '@modules/users/users.module.js';
     UpdateDispatcherService,
     StartCommandHandler,
     TelegramClientService,
+    TextMessageHandler,
   ],
 })
 export class TelegramModule {}

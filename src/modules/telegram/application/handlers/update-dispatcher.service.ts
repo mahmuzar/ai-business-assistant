@@ -4,6 +4,7 @@ import { trace, Span } from '@opentelemetry/api';
 import { UpdateDto } from '../dto/update.dto.js';
 import { CommandHandler } from './command-handler.interface.js';
 import { StartCommandHandler } from './start-command.handler.js';
+import { TextMessageHandler } from './text-message.handler.js';
 
 @Injectable()
 export class UpdateDispatcherService {
@@ -11,7 +12,8 @@ export class UpdateDispatcherService {
 
   constructor(
     private readonly logger: PinoLogger,
-    private readonly startHandler: StartCommandHandler
+    private readonly startHandler: StartCommandHandler,
+    private readonly textHandler: TextMessageHandler
   ) {
     this.logger.setContext(UpdateDispatcherService.name);
     
@@ -51,7 +53,7 @@ export class UpdateDispatcherService {
         } else {
           span.setAttribute('dispatch.result', 'unknown_command');
           this.logger.info({ text }, 'Received unknown command or plain text');
-          // TODO: Здесь позже добавим обработку обычного текста или эхо-ответ
+          await this.textHandler.handle(update);
         }
       } catch (error) {
         span.recordException(error as Error);
