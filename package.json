@@ -58,6 +58,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "dotenv": "^18.0.0",
+    "gigachat": "^0.0.20",
     "grammy": "^1.46.0",
     "ioredis": "^6.0.0",
     "kafkajs": "^2.2.4",

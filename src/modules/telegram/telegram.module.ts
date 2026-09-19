@@ -5,9 +5,10 @@ import { StartCommandHandler } from './application/handlers/start-command.handle
 import { TelegramClientService } from './infrastructure/client.service.js';
 import { UsersModule } from '@modules/users/users.module.js';
 import { TextMessageHandler } from './application/handlers/text-message.handler.js';
+import { AiModule } from '@modules/ai/ai.module.js';
 
 @Module({
-  imports: [UsersModule],
+  imports: [UsersModule, AiModule],
   controllers: [WebhookController],
   providers: [
     UpdateDispatcherService,
