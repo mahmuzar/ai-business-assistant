@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { getOtelContext } from './shared/logging/otel-context.js'; // <-- Импорт утилиты
 import { ConfigModule } from '@nestjs/config';
 import { DatabaseModule } from './database/database.module.js';
+import { TelegramModule } from '@modules/telegram/telegram.module.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -56,6 +57,7 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
     }),
     DatabaseModule,
     UsersModule,
+    TelegramModule, // <-- Подключаем модуль Telegram
   ],
 })
 export class AppModule { }

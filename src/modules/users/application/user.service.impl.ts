@@ -14,6 +14,31 @@ export class UserServiceImpl implements UserService {
   ) {
     this.logger.setContext(UserServiceImpl.name);
   }
+  async findByTelegramId(telegramId: number): Promise<Result<User | null>> {
+    const tracer = trace.getTracer('ai-business-assistant');
+    const span = tracer.startSpan('UserServiceImpl.findByTelegramId');
+
+    try {
+      span.setAttribute('user.telegramId', telegramId);
+      this.logger.debug({ telegramId }, 'Searching for user by Telegram ID');
+
+      const result = await this.userRepository.findByTelegramId(telegramId);
+
+      if (result.isSuccess() && result.getValue()) {
+        this.logger.debug({ userId: result.getValue()?.id }, 'User found');
+      } else {
+        this.logger.debug({ telegramId }, 'User not found');
+      }
+
+      return result;
+
+    } catch (error) {
+      span.recordException(error as Error);
+      throw error;
+    } finally {
+      span.end();
+    }
+  }
 
   async getUserById(id: string): Promise<Result<User | null>> {
     const result = await this.userRepository.findById(id);
@@ -24,6 +49,7 @@ export class UserServiceImpl implements UserService {
 
     return Result.success(result.getValue());
   }
+
   async registerUser(telegramId: number, username?: string): Promise<Result<User>> {
     const tracer = trace.getTracer('ai-business-assistant');
     const span = tracer.startSpan('UserServiceImpl.registerUser');
