@@ -1,7 +1,9 @@
-import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, Get, Param, NotFoundException } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { trace } from '@opentelemetry/api';
 import { UserServiceImpl } from '@modules/users/application/index.js';
+import { UserResponseDto } from '../dto/user.response.dto.js';
+import { UserResponseMapper } from '../mappers/user-response.mapper.js';
 
 class RegisterUserDto {
     telegramId!: number;
@@ -15,6 +17,23 @@ export class UserController {
         private readonly logger: PinoLogger
     ) {
         this.logger.setContext(UserController.name);
+    }
+
+    @Get(':id')
+    async getUser(@Param('id') id: string): Promise<{ success: boolean; data: UserResponseDto }> {
+        const result = await this.userService.getUserById(id);
+
+        if (result.isFailure() || !result.getValue()) {
+            throw new NotFoundException('User not found');
+        }
+
+        const user = result.getValue();
+
+        if (user === null) throw new NotFoundException('User not found');
+
+        const response = UserResponseMapper.toDto(user);
+
+        return { success: true, data: response };
     }
 
     @Post('register')
