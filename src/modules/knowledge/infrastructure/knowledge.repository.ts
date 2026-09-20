@@ -118,11 +118,11 @@ export class KnowledgeRepository {
           SELECT 
             c.content,
             d.filename,
-            1 - (c.embedding <=> ${vectorString}::vector) as similarity
+            1 - (c.embedding::vector <=> ${vectorString}::vector) as similarity
           FROM chunks c
           JOIN documents d ON c."documentId" = d.id
           WHERE d.status = 'ready'
-          ORDER BY c.embedding <=> ${vectorString}::vector
+          ORDER BY c.embedding::vector <=> ${vectorString}::vector
           LIMIT ${limit}
         `;
 
