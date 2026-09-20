@@ -13,7 +13,7 @@ export interface RetrievedContext {
 
 @Injectable()
 export class RetrievalService {
-  private readonly SIMILARITY_THRESHOLD = 0.7;
+  private readonly SIMILARITY_THRESHOLD = 0;
   private readonly MAX_RESULTS = 5;
 
   constructor(
@@ -44,6 +44,14 @@ export class RetrievalService {
           'Retrieval completed'
         );
 
+        const resultsSimilar = await this.repo.searchSimilar(queryEmbedding, this.MAX_RESULTS);
+
+        // Логируем similarity каждого результата для отладки
+        resultsSimilar.forEach((r, i) => {
+          this.logger.debug({ index: i, similarity: r.similarity, contentPreview: r.content.substring(0, 50) }, 'Search result');
+        });
+
+        span.setAttribute('results.total', results.length);
         return filtered.map(r => ({
           content: r.content,
           source: r.filename,

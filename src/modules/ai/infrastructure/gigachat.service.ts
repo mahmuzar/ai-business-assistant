@@ -63,20 +63,17 @@ export class GigaChatService {
             try {
                 const token = await this.getAccessToken();
 
-                // Формируем сообщения: system + история + текущее сообщение
-                const systemMessage = {
-                    role: 'system',
-                    content: 'Вы - профессиональный AI-ассистент для бизнеса. Отвечайте кратко и по делу.'
-                };
+                // Messages уже сформированы в TextMessageHandler (system + history + user)
+                // Используем их как есть
+                const messages = history.length > 0
+                    ? history
+                    : [
+                        { role: 'system', content: 'Вы - профессиональный AI-ассистент для бизнеса. Отвечайте кратко и по делу.' },
+                        { role: 'user', content: userMessage },
+                    ];
 
-                // Если история уже содержит текущее сообщение (из ConversationService),
-                // используем историю как есть. Иначе добавляем.
-                const lastMessage = history.length > 0 ? history[history.length - 1] : undefined;
+                this.logger.debug({ messagesCount: messages.length, roles: messages.map(m => m.role) }, 'Messages prepared for GigaChat');
 
-                const messages = lastMessage && lastMessage.content === userMessage
-                    ? [systemMessage, ...history]
-                    : [systemMessage, ...history, { role: 'user', content: userMessage }];
-                    
                 const response = await firstValueFrom(
                     this.httpService.post(
                         `${this.baseUrl}/chat/completions`,
@@ -86,7 +83,6 @@ export class GigaChatService {
                             temperature: Number(this.configService.get('GIGACHAT_TEMPERATURE', 0.7)),
                             max_tokens: Number(this.configService.get('GIGACHAT_MAX_TOKENS', 4096)),
                             stream: false,
-                            repetition_penalty: 1,
                         },
                         {
                             headers: {
@@ -108,7 +104,6 @@ export class GigaChatService {
                 return aiResponse;
 
             } catch (error) {
-
                 recordExceptionSafe(span, error);
                 span.setStatus({ code: 2, message: 'GigaChat request failed' });
                 this.logger.error({ error }, 'Failed to get response from GigaChat');

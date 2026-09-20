@@ -43,17 +43,36 @@ export class TextMessageHandler implements CommandHandler {
         const conservation = await this.conversationService.getContextAndSave(telegramId, text);
 
         // RAG: поиск релевантного контекста
+        let ragContext = '';
         const contexts = await this.retrievalService.retrieve(text);
-        const ragPrompt = this.retrievalService.formatContextForPrompt(contexts);
+        if (contexts.length > 0) {
+          ragContext = this.retrievalService.formatContextForPrompt(contexts);
+        }
         span.setAttribute('rag.contexts_found', contexts.length);
 
-        // Если есть RAG-контекст, добавляем как system message
-        if (ragPrompt) {
-          conservation.history.unshift({ role: 'system', content: ragPrompt });
-        }
+        // Ограничиваем историю последними 10 сообщениями
+        const recentHistory = conservation.history.slice(-10);
 
-        // Отправляем историю в GigaChat
-        const aiResponse = await this.gigaChatService.chat(text, conservation.history);
+        // Объединяем system-промпты в один
+        const systemPrompt = ragContext
+          ? `Вы - профессиональный AI-ассистент для бизнеса. Отвечайте кратко и по делу.\n\n${ragContext}`
+          : 'Вы - профессиональный AI-ассистент для бизнеса. Отвечайте кратко и по делу.';
+
+        // Формируем messages для GigaChat
+        const messages = [
+          { role: 'system' as const, content: systemPrompt },
+          ...recentHistory.map(m => ({
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+          })),
+          { role: 'user' as const, content: text },
+        ];
+
+        span.setAttribute('messages.count', messages.length);
+        span.setAttribute('history.length', recentHistory.length);
+
+        // Отправляем в GigaChat
+        const aiResponse = await this.gigaChatService.chat(text, messages);
 
         // Сохраняем ответ AI
         await this.conversationService.saveAssistantResponse(conservation.conversationId, aiResponse);
