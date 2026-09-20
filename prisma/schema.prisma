@@ -7,15 +7,28 @@ datasource db {
   // url убран - теперь управляется через prisma.config.ts и .env
 }
 
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
 model User {
   id         String   @id @default(uuid())
   telegramId Int      @unique
   username   String?
+  role       UserRole @default(USER)
   status     String   @default("active")
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   conversations Conversation[]
+  documents     Document[]
 
   @@map("users")
 }
@@ -50,8 +63,34 @@ model Message {
   @@map("messages")
 }
 
-enum MessageRole {
-  USER
-  ASSISTANT
-  SYSTEM
+model Document {
+  id          String     @id @default(uuid())
+  uploadedBy  String
+  filename    String
+  mimeType    String
+  fileSize    Int
+  status      String     @default("processing")
+  chunkCount  Int        @default(0)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  uploader    User       @relation(fields: [uploadedBy], references: [id])
+  chunks      Chunk[]
+
+  @@map("documents")
+}
+
+model Chunk {
+  id          String   @id @default(uuid())
+  documentId  String
+  content     String
+  order       Int
+  embedding   Float[]
+  tokenCount  Int?
+  createdAt   DateTime @default(now())
+
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@map("chunks")
 }

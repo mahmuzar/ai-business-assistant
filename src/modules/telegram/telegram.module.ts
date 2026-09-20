@@ -7,9 +7,10 @@ import { UsersModule } from '@modules/users/users.module.js';
 import { TextMessageHandler } from './application/handlers/text-message.handler.js';
 import { AiModule } from '@modules/ai/ai.module.js';
 import { ConversationModule } from '@modules/conversation/conversation.module.js';
+import { KnowledgeModule } from '@modules/knowledge/knowledge.module.js';
 
 @Module({
-  imports: [UsersModule, AiModule, ConversationModule],
+  imports: [UsersModule, AiModule, ConversationModule, KnowledgeModule],
   controllers: [WebhookController],
   providers: [
     UpdateDispatcherService,

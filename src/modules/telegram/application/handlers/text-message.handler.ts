@@ -4,6 +4,7 @@ import { trace, Span } from '@opentelemetry/api';
 import { TelegramClientService } from '../../infrastructure/client.service.js';
 import { GigaChatService } from '../../../ai/infrastructure/gigachat.service.js';
 import { ConversationService } from '../../../conversation/application/conversation.service.js';
+import { RetrievalService } from '../../../knowledge/application/retrieval.service.js';
 import { CommandHandler } from './command-handler.interface.js';
 import { UpdateDto } from '../dto/update.dto.js';
 import { recordExceptionSafe } from '../../../../common/utils/trace.utils.js';
@@ -16,6 +17,7 @@ export class TextMessageHandler implements CommandHandler {
     private readonly telegramClient: TelegramClientService,
     private readonly gigaChatService: GigaChatService,
     private readonly conversationService: ConversationService,
+    private readonly retrievalService: RetrievalService,
     private readonly logger: PinoLogger
   ) {
     this.logger.setContext(TextMessageHandler.name);
@@ -39,6 +41,16 @@ export class TextMessageHandler implements CommandHandler {
       try {
         // Загружаем контекст диалога и сохраняем сообщение
         const conservation = await this.conversationService.getContextAndSave(telegramId, text);
+
+        // RAG: поиск релевантного контекста
+        const contexts = await this.retrievalService.retrieve(text);
+        const ragPrompt = this.retrievalService.formatContextForPrompt(contexts);
+        span.setAttribute('rag.contexts_found', contexts.length);
+
+        // Если есть RAG-контекст, добавляем как system message
+        if (ragPrompt) {
+          conservation.history.unshift({ role: 'system', content: ragPrompt });
+        }
 
         // Отправляем историю в GigaChat
         const aiResponse = await this.gigaChatService.chat(text, conservation.history);

@@ -61,7 +61,7 @@ services:
       - observability
 
   postgres:
-    image: postgres:17-alpine
+    image: pgvector/pgvector:pg17
     container_name: ai-assistant-postgres
     environment:
       POSTGRES_DB: ai_business_assistant

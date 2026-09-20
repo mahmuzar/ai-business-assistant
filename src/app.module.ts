@@ -3,27 +3,27 @@ import { UsersModule } from './modules/users/users.module.js';
 import { LoggerModule } from 'nestjs-pino';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
-import { getOtelContext } from './shared/logging/otel-context.js'; // <-- Импорт утилиты
+import { getOtelContext } from './shared/logging/otel-context.js';
 import { ConfigModule } from '@nestjs/config';
 import { DatabaseModule } from './database/database.module.js';
 import { TelegramModule } from '@modules/telegram/telegram.module.js';
+import { KnowledgeModule } from './modules/knowledge/knowledge.module.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 @Module({
   imports: [
     ConfigModule.forRoot({
-      isGlobal: true,       // Делаем доступным во всех модулях без импорта
+      isGlobal: true,
       envFilePath: [
-        '.env.local',       // Приоритет 1: локальные секреты
-        '.env',             // Приоритет 2: основной конфиг
+        '.env.local',
+        '.env',
       ],
-      cache: true,          // Кэшируем переменные (не перечитываем при каждом get)
-      validate: undefined,  // Можно добавить Joi/Zod схему валидации позже
+      cache: true,
+      validate: undefined,
     }),
     LoggerModule.forRoot({
       pinoHttp: {
-        // mixin вызывается синхронно при каждом логе в основном потоке
         mixin: () => getOtelContext(),
 
         transport: {
@@ -52,12 +52,12 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
           ]
         },
         level: 'info',
-        // hooks.logMethod удален, так как mixin делает то же самое надежнее
       },
     }),
     DatabaseModule,
     UsersModule,
-    TelegramModule, // <-- Подключаем модуль Telegram
+    TelegramModule,
+    KnowledgeModule,
   ],
 })
 export class AppModule { }
