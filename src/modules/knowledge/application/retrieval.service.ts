@@ -3,7 +3,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { trace, Span } from '@opentelemetry/api';
 import { KnowledgeRepository } from '../infrastructure/knowledge.repository.js';
 import { recordExceptionSafe } from '../../../common/utils/trace.utils.js';
-import { IEmbeddingsService, EMBEDDINGS_SERVICE } from '../../ai/application/embeddings.interface.js';
+import { IEmbeddingsService, LOCAL_EMBEDDINGS_SERVICE } from '../../ai/application/embeddings.interface.js';
 
 export interface RetrievedContext {
   content: string;
@@ -18,7 +18,7 @@ export class RetrievalService {
 
   constructor(
     private readonly repo: KnowledgeRepository,
-    @Inject(EMBEDDINGS_SERVICE) private readonly embeddingsService: IEmbeddingsService,
+    @Inject(LOCAL_EMBEDDINGS_SERVICE) private readonly embeddingsService: IEmbeddingsService,
     private readonly logger: PinoLogger
   ) {
     this.logger.setContext(RetrievalService.name);

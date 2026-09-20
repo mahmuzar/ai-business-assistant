@@ -4,7 +4,7 @@ import { trace, Span } from '@opentelemetry/api';
 import { KnowledgeRepository } from '../infrastructure/knowledge.repository.js';
 import { ChunkingService } from './chunking.service.js';
 import { FileParserService } from './file-parser.service.js';
-import { IEmbeddingsService, EMBEDDINGS_SERVICE } from '../../ai/application/embeddings.interface.js';
+import { IEmbeddingsService, LOCAL_EMBEDDINGS_SERVICE } from '../../ai/application/embeddings.interface.js';
 import { recordExceptionSafe } from '../../../common/utils/trace.utils.js';
 
 @Injectable()
@@ -13,7 +13,7 @@ export class IngestionService {
         private readonly repo: KnowledgeRepository,
         private readonly chunkingService: ChunkingService,
         private readonly fileParserService: FileParserService,
-        @Inject(EMBEDDINGS_SERVICE) private readonly embeddingsService: IEmbeddingsService,
+        @Inject(LOCAL_EMBEDDINGS_SERVICE) private readonly embeddingsService: IEmbeddingsService,
         private readonly logger: PinoLogger
     ) {
         this.logger.setContext(IngestionService.name);
