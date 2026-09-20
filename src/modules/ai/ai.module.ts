@@ -4,7 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { HttpModule } from '@nestjs/axios';
 
 @Module({
-  imports: [ConfigModule, ConfigModule, HttpModule],
+  imports: [ConfigModule, HttpModule],
   providers: [GigaChatService],
   exports: [GigaChatService],
 })

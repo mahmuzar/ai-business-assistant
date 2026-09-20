@@ -3,6 +3,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { trace, Span } from '@opentelemetry/api';
 import { TelegramClientService } from '../../infrastructure/client.service.js';
 import { GigaChatService } from '../../../ai/infrastructure/gigachat.service.js';
+import { ConversationService } from '../../../conversation/application/conversation.service.js';
 import { CommandHandler } from './command-handler.interface.js';
 import { UpdateDto } from '../dto/update.dto.js';
 import { recordExceptionSafe } from '../../../../common/utils/trace.utils.js';
@@ -14,6 +15,7 @@ export class TextMessageHandler implements CommandHandler {
   constructor(
     private readonly telegramClient: TelegramClientService,
     private readonly gigaChatService: GigaChatService,
+    private readonly conversationService: ConversationService,
     private readonly logger: PinoLogger
   ) {
     this.logger.setContext(TextMessageHandler.name);
@@ -35,9 +37,15 @@ export class TextMessageHandler implements CommandHandler {
       this.logger.info({ telegramId, textLength: text.length }, 'Processing text message');
 
       try {
-        // Отправляем сообщение в GigaChat
-        const aiResponse = await this.gigaChatService.chat(text);
-        
+        // Загружаем контекст диалога и сохраняем сообщение
+        const conservation = await this.conversationService.getContextAndSave(telegramId, text);
+
+        // Отправляем историю в GigaChat
+        const aiResponse = await this.gigaChatService.chat(text, conservation.history);
+
+        // Сохраняем ответ AI
+        await this.conversationService.saveAssistantResponse(conservation.conversationId, aiResponse);
+
         span.setAttribute('response.length', aiResponse.length);
         this.logger.info({ telegramId, responseLength: aiResponse.length }, 'AI response received');
 
@@ -49,11 +57,10 @@ export class TextMessageHandler implements CommandHandler {
         recordExceptionSafe(span, error);
         span.setStatus({ code: 2, message: 'Failed to process text message' });
         this.logger.error({ telegramId, error }, 'Failed to process text message');
-        
-        // Fallback: если AI недоступен, отправляем сообщение об ошибке
+
         try {
           await this.telegramClient.sendMessage(
-            telegramId, 
+            telegramId,
             'Извините, произошла ошибка при обработке запроса. Попробуйте позже.'
           );
         } catch (sendError) {

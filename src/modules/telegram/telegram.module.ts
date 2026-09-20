@@ -6,9 +6,10 @@ import { TelegramClientService } from './infrastructure/client.service.js';
 import { UsersModule } from '@modules/users/users.module.js';
 import { TextMessageHandler } from './application/handlers/text-message.handler.js';
 import { AiModule } from '@modules/ai/ai.module.js';
+import { ConversationModule } from '@modules/conversation/conversation.module.js';
 
 @Module({
-  imports: [UsersModule, AiModule],
+  imports: [UsersModule, AiModule, ConversationModule],
   controllers: [WebhookController],
   providers: [
     UpdateDispatcherService,

@@ -50,27 +50,39 @@ export class GigaChatService {
         }
     }
 
-    async chat(userMessage: string): Promise<string> {
+    async chat(userMessage: string, history: Array<{ role: string; content: string }> = []): Promise<string> {
         const tracer = trace.getTracer('ai-business-assistant');
 
         return tracer.startActiveSpan('GigaChatService.chat', async (span: Span) => {
             span.setAttribute('ai.model', this.model);
             span.setAttribute('message.length', userMessage.length);
+            span.setAttribute('history.length', history.length);
 
-            this.logger.info({ model: this.model }, 'Sending request to GigaChat');
+            this.logger.info({ model: this.model, historyLength: history.length }, 'Sending request to GigaChat');
 
             try {
                 const token = await this.getAccessToken();
 
+                // Формируем сообщения: system + история + текущее сообщение
+                const systemMessage = {
+                    role: 'system',
+                    content: 'Вы - профессиональный AI-ассистент для бизнеса. Отвечайте кратко и по делу.'
+                };
+
+                // Если история уже содержит текущее сообщение (из ConversationService),
+                // используем историю как есть. Иначе добавляем.
+                const lastMessage = history.length > 0 ? history[history.length - 1] : undefined;
+
+                const messages = lastMessage && lastMessage.content === userMessage
+                    ? [systemMessage, ...history]
+                    : [systemMessage, ...history, { role: 'user', content: userMessage }];
+                    
                 const response = await firstValueFrom(
                     this.httpService.post(
                         `${this.baseUrl}/chat/completions`,
                         {
                             model: this.model,
-                            messages: [
-                                { role: 'system', content: 'Вы - профессиональный AI-ассистент для бизнеса. Отвечайте кратко и по делу.' },
-                                { role: 'user', content: userMessage }
-                            ],
+                            messages,
                             temperature: Number(this.configService.get('GIGACHAT_TEMPERATURE', 0.7)),
                             max_tokens: Number(this.configService.get('GIGACHAT_MAX_TOKENS', 4096)),
                             stream: false,
@@ -96,6 +108,7 @@ export class GigaChatService {
                 return aiResponse;
 
             } catch (error) {
+
                 recordExceptionSafe(span, error);
                 span.setStatus({ code: 2, message: 'GigaChat request failed' });
                 this.logger.error({ error }, 'Failed to get response from GigaChat');
