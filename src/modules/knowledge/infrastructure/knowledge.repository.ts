@@ -4,8 +4,6 @@ import { trace, Span } from '@opentelemetry/api';
 import { recordExceptionSafe } from '../../../common/utils/trace.utils.js';
 import { PrismaService } from '../../../database/prisma.service.js';
 
-
-
 @Injectable()
 export class KnowledgeRepository {
     constructor(
@@ -15,7 +13,7 @@ export class KnowledgeRepository {
         this.logger.setContext(KnowledgeRepository.name);
     }
 
-    async createDocument(userId: string, filename: string, mimeType: string, fileSize: number): Promise<string> {
+    async createDocument(userId: string, filename: string, mimeType: string, size: number): Promise<string> {
         const tracer = trace.getTracer('ai-business-assistant');
 
         return tracer.startActiveSpan('KnowledgeRepository.createDocument', async (span: Span) => {
@@ -28,7 +26,7 @@ export class KnowledgeRepository {
                         uploadedBy: userId,
                         filename,
                         mimeType,
-                        fileSize,
+                        size,
                         status: 'processing',
                     },
                 });
@@ -46,7 +44,26 @@ export class KnowledgeRepository {
         });
     }
 
-    async updateDocumentStatus(documentId: string, status: string, chunkCount?: number): Promise<void> {
+    // Новый метод: поиск по sourceId (для Re-sync)
+    async findDocumentBySourceId(sourceId: string) {
+        return this.prisma.document.findFirst({
+            where: { sourceId },
+        });
+    }
+
+    // Новый метод: обновление метаданных источника
+    async updateDocumentMetadata(id: string, sourceId: string, sourceUpdatedAt: Date) {
+        return this.prisma.document.update({
+            where: { id },
+            data: {
+                sourceId,
+                sourceUpdatedAt,
+                status: 'processing',
+            },
+        });
+    }
+
+    async updateDocumentStatus(documentId: string, status: string): Promise<void> {
         const tracer = trace.getTracer('ai-business-assistant');
 
         return tracer.startActiveSpan('KnowledgeRepository.updateDocumentStatus', async (span: Span) => {
@@ -58,11 +75,10 @@ export class KnowledgeRepository {
                     where: { id: documentId },
                     data: {
                         status,
-                        ...(chunkCount !== undefined && { chunkCount }),
                     },
                 });
 
-                this.logger.info({ documentId, status, chunkCount }, 'Document status updated');
+                this.logger.info({ documentId, status }, 'Document status updated');
 
             } catch (error) {
                 recordExceptionSafe(span, error);
@@ -74,6 +90,7 @@ export class KnowledgeRepository {
         });
     }
 
+    // Обновленный метод: теперь удаляет старые чанки перед записью (Re-sync)
     async saveChunks(documentId: string, chunks: Array<{ content: string; order: number; embedding: number[]; tokenCount?: number }>): Promise<void> {
         const tracer = trace.getTracer('ai-business-assistant');
 
@@ -82,6 +99,12 @@ export class KnowledgeRepository {
                 span.setAttribute('document.id', documentId);
                 span.setAttribute('chunks.count', chunks.length);
 
+                // Удаляем старые чанки этого документа
+                await this.prisma.chunk.deleteMany({
+                    where: { documentId },
+                });
+
+                // Создаем новые
                 await this.prisma.chunk.createMany({
                     data: chunks.map(chunk => ({
                         documentId,
@@ -92,7 +115,7 @@ export class KnowledgeRepository {
                     })),
                 });
 
-                this.logger.info({ documentId, chunksCount: chunks.length }, 'Chunks saved');
+                this.logger.info({ documentId, chunksCount: chunks.length }, 'Chunks saved (old ones replaced)');
 
             } catch (error) {
                 recordExceptionSafe(span, error);
@@ -141,13 +164,19 @@ export class KnowledgeRepository {
         });
     }
 
-    async getAllDocuments(): Promise<Array<{ id: string; filename: string; status: string; chunkCount: number; createdAt: Date }>> {
+    async getAllDocuments(): Promise<Array<{ id: string; filename: string; status: string; createdAt: Date }>> {
         const tracer = trace.getTracer('ai-business-assistant');
 
         return tracer.startActiveSpan('KnowledgeRepository.getAllDocuments', async (span: Span) => {
             try {
                 const documents = await this.prisma.document.findMany({
-                    select: { id: true, filename: true, status: true, chunkCount: true, createdAt: true },
+                    select: { 
+                        id: true, 
+                        filename: true, 
+                        status: true, 
+                        // chunkCount убрали, так как его нет в схеме
+                        createdAt: true 
+                    },
                     orderBy: { createdAt: 'desc' },
                 });
 

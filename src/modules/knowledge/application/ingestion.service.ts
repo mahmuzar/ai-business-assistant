@@ -27,7 +27,6 @@ export class IngestionService {
         return tracer.startActiveSpan('IngestionService.syncFromSource', async (span: Span) => {
             span.setAttribute('source.name', this.documentSource.name);
 
-            // Проверяем доступность источника
             const isHealthy = await this.documentSource.healthCheck();
             if (!isHealthy) {
                 throw new Error(`Document source "${this.documentSource.name}" is not available`);
@@ -40,41 +39,47 @@ export class IngestionService {
 
             for (const doc of documents) {
                 try {
-                    // Проверяем, уже ли синхронизирован
-                    const existing = await (this.repo as any).findDocumentBySourceId?.(doc.id);
-                    if (existing && existing.status === 'ready') {
-                        this.logger.debug({ documentId: doc.id, filename: doc.filename }, 'Skipping already synced document');
-                        continue;
+                    const existing = await this.repo.findDocumentBySourceId(doc.id);
+
+                    // Re-sync логика: пропускаем если документ актуален
+                    if (existing && existing.sourceUpdatedAt && existing.status === 'ready') {
+                        const dbTime = new Date(existing.sourceUpdatedAt).getTime();
+                        const sourceTime = new Date(doc.updatedAt).getTime();
+
+                        if (dbTime >= sourceTime) {
+                            this.logger.debug({ documentId: existing.id, filename: doc.filename }, 'Document is up to date, skipping');
+                            continue;
+                        }
+                        this.logger.info({ documentId: existing.id, filename: doc.filename }, 'Document updated in source, re-syncing');
                     }
 
-                    span.addEvent('downloading', { 'document.id': doc.id, 'document.filename': doc.filename });
+                    span.addEvent('processing_document', { 'document.id': doc.id, 'document.filename': doc.filename });
 
-                    // Скачиваем файл
                     const downloaded = await this.documentSource.downloadDocument(doc.id);
 
+                    let documentId = existing?.id;
+                    if (!documentId) {
+                        // TODO: заменить на реальный userId из авторизации
+                        const systemUserId = '90cea254-643a-4a86-b671-88d7fd907990';
+                        documentId = await this.repo.createDocument(
+                            systemUserId, downloaded.filename, downloaded.mimeType, downloaded.buffer.length
+                        );
+                    }
 
-                    // TODO: заменить на реальный userId из авторизации
-                    const systemUserId = '90cea254-643a-4a86-b671-88d7fd907990';
-                    const documentId = existing?.id || await this.repo.createDocument(
-                        systemUserId, downloaded.filename, downloaded.mimeType, downloaded.buffer.length
-                    );
-                    
-                    span.setAttribute('document.id', documentId);
+                    // Сохраняем метаданные источника
+                    await this.repo.updateDocumentMetadata(documentId, doc.id, doc.updatedAt);
 
-                    // Парсим текст
                     const textContent = await this.fileParserService.extractTextFromBuffer(downloaded.buffer, downloaded.filename);
 
                     if (!textContent.trim()) {
                         await this.repo.updateDocumentStatus(documentId, 'failed');
-                        this.logger.warn({ documentId, filename: doc.filename }, 'Document is empty, skipping');
+                        this.logger.warn({ documentId, filename: doc.filename }, 'Document is empty, marking as failed');
                         continue;
                     }
 
-                    // Чанкинг
                     const chunks = this.chunkingService.chunkText(textContent);
                     span.setAttribute('chunks.count', chunks.length);
 
-                    // Эмбеддинги батчами
                     const BATCH_SIZE = 10;
                     const allEmbeddings: number[][] = [];
 
@@ -98,18 +103,24 @@ export class IngestionService {
                         };
                     });
 
+                    // saveChunks теперь сам удаляет старые чанки перед записью новых
                     await this.repo.saveChunks(documentId, chunksWithEmbeddings);
-                    await this.repo.updateDocumentStatus(documentId, 'ready', chunks.length);
+                    await this.repo.updateDocumentStatus(documentId, 'ready');
 
                     this.logger.info({ documentId, filename: doc.filename, chunks: chunks.length }, 'Document synced from source');
 
                 } catch (error) {
                     recordExceptionSafe(span, error);
-                    this.logger.error({ documentId: doc.id, filename: doc.filename, error }, 'Failed to sync document from source');
+                    // Добавь этот лог, чтобы видеть полную ошибку
+                    this.logger.error({
+                        sourceId: doc.id,
+                        filename: doc.filename,
+                        error: error instanceof Error ? error.message : error,
+                        stack: error instanceof Error ? error.stack : undefined
+                    }, 'Failed to sync document from source');
 
-                    // Обновляем статус на failed если документ был создан
                     try {
-                        const existingDoc = await (this.repo as any).findDocumentBySourceId?.(doc.id);
+                        const existingDoc = await this.repo.findDocumentBySourceId(doc.id);
                         if (existingDoc) {
                             await this.repo.updateDocumentStatus(existingDoc.id, 'failed');
                         }
@@ -170,7 +181,7 @@ export class IngestionService {
                 });
 
                 await this.repo.saveChunks(documentId, chunksWithEmbeddings);
-                await this.repo.updateDocumentStatus(documentId, 'ready', chunks.length);
+                await this.repo.updateDocumentStatus(documentId, 'ready');
 
                 span.setAttribute('status', 'ready');
                 this.logger.info({ documentId, filename: file.originalname, chunksCount: chunks.length }, 'Document ingested');
