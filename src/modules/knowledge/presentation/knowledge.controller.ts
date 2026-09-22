@@ -107,4 +107,27 @@ export class KnowledgeController {
       }
     });
   }
+  @Post('sync')
+  async syncFromSource() {
+    const tracer = trace.getTracer('ai-business-assistant');
+
+    return tracer.startActiveSpan('KnowledgeController.syncFromSource', async (span: Span) => {
+      try {
+        this.logger.info('Sync from source requested');
+
+        await this.ingestionService.syncFromSource();
+
+        this.logger.info('Sync from source completed');
+
+        return { success: true, message: 'Синхронизация завершена' };
+
+      } catch (error) {
+        recordExceptionSafe(span, error);
+        this.logger.error({ error }, 'Sync from source failed');
+        throw error;
+      } finally {
+        span.end();
+      }
+    });
+  }
 }

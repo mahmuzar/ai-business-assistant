@@ -5,6 +5,7 @@ import { KnowledgeRepository } from '../infrastructure/knowledge.repository.js';
 import { ChunkingService } from './chunking.service.js';
 import { FileParserService } from './file-parser.service.js';
 import { IEmbeddingsService, LOCAL_EMBEDDINGS_SERVICE } from '../../ai/application/embeddings.interface.js';
+import { IDocumentSource, DOCUMENT_SOURCE } from '../domain/document-source.interface.js';
 import { recordExceptionSafe } from '../../../common/utils/trace.utils.js';
 
 @Injectable()
@@ -14,9 +15,113 @@ export class IngestionService {
         private readonly chunkingService: ChunkingService,
         private readonly fileParserService: FileParserService,
         @Inject(LOCAL_EMBEDDINGS_SERVICE) private readonly embeddingsService: IEmbeddingsService,
-        private readonly logger: PinoLogger
+        private readonly logger: PinoLogger,
+        @Inject(DOCUMENT_SOURCE) private readonly documentSource: IDocumentSource
     ) {
         this.logger.setContext(IngestionService.name);
+    }
+
+    async syncFromSource(): Promise<void> {
+        const tracer = trace.getTracer('ai-business-assistant');
+
+        return tracer.startActiveSpan('IngestionService.syncFromSource', async (span: Span) => {
+            span.setAttribute('source.name', this.documentSource.name);
+
+            // Проверяем доступность источника
+            const isHealthy = await this.documentSource.healthCheck();
+            if (!isHealthy) {
+                throw new Error(`Document source "${this.documentSource.name}" is not available`);
+            }
+
+            const documents = await this.documentSource.listDocuments();
+            span.setAttribute('documents.total', documents.length);
+
+            this.logger.info({ source: this.documentSource.name, count: documents.length }, 'Starting sync from source');
+
+            for (const doc of documents) {
+                try {
+                    // Проверяем, уже ли синхронизирован
+                    const existing = await (this.repo as any).findDocumentBySourceId?.(doc.id);
+                    if (existing && existing.status === 'ready') {
+                        this.logger.debug({ documentId: doc.id, filename: doc.filename }, 'Skipping already synced document');
+                        continue;
+                    }
+
+                    span.addEvent('downloading', { 'document.id': doc.id, 'document.filename': doc.filename });
+
+                    // Скачиваем файл
+                    const downloaded = await this.documentSource.downloadDocument(doc.id);
+
+
+                    // TODO: заменить на реальный userId из авторизации
+                    const systemUserId = '90cea254-643a-4a86-b671-88d7fd907990';
+                    const documentId = existing?.id || await this.repo.createDocument(
+                        systemUserId, downloaded.filename, downloaded.mimeType, downloaded.buffer.length
+                    );
+                    
+                    span.setAttribute('document.id', documentId);
+
+                    // Парсим текст
+                    const textContent = await this.fileParserService.extractTextFromBuffer(downloaded.buffer, downloaded.filename);
+
+                    if (!textContent.trim()) {
+                        await this.repo.updateDocumentStatus(documentId, 'failed');
+                        this.logger.warn({ documentId, filename: doc.filename }, 'Document is empty, skipping');
+                        continue;
+                    }
+
+                    // Чанкинг
+                    const chunks = this.chunkingService.chunkText(textContent);
+                    span.setAttribute('chunks.count', chunks.length);
+
+                    // Эмбеддинги батчами
+                    const BATCH_SIZE = 10;
+                    const allEmbeddings: number[][] = [];
+
+                    for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+                        const batch = chunks.slice(i, i + BATCH_SIZE);
+                        const texts = batch.map(c => c.content);
+                        const embeddings = await this.embeddingsService.embedTexts(texts);
+                        allEmbeddings.push(...embeddings);
+                    }
+
+                    const chunksWithEmbeddings = chunks.map((chunk, index) => {
+                        const embedding = allEmbeddings[index];
+                        if (!embedding) {
+                            throw new Error(`Missing embedding for chunk ${index}`);
+                        }
+                        return {
+                            content: chunk.content,
+                            order: chunk.order,
+                            embedding,
+                            tokenCount: Math.ceil(chunk.content.length / 4),
+                        };
+                    });
+
+                    await this.repo.saveChunks(documentId, chunksWithEmbeddings);
+                    await this.repo.updateDocumentStatus(documentId, 'ready', chunks.length);
+
+                    this.logger.info({ documentId, filename: doc.filename, chunks: chunks.length }, 'Document synced from source');
+
+                } catch (error) {
+                    recordExceptionSafe(span, error);
+                    this.logger.error({ documentId: doc.id, filename: doc.filename, error }, 'Failed to sync document from source');
+
+                    // Обновляем статус на failed если документ был создан
+                    try {
+                        const existingDoc = await (this.repo as any).findDocumentBySourceId?.(doc.id);
+                        if (existingDoc) {
+                            await this.repo.updateDocumentStatus(existingDoc.id, 'failed');
+                        }
+                    } catch {
+                        // игнорируем ошибку при обновлении статуса
+                    }
+                }
+            }
+
+            this.logger.info({ source: this.documentSource.name }, 'Sync from source completed');
+            span.end();
+        });
     }
 
     async ingestFile(userId: string, file: Express.Multer.File): Promise<string> {

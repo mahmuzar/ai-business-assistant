@@ -68,4 +68,35 @@ export class FileParserService {
       }
     });
   }
+
+  async extractTextFromBuffer(buffer: Buffer, filename: string): Promise<string> {
+    const tracer = trace.getTracer('ai-business-assistant');
+
+    return tracer.startActiveSpan('FileParserService.extractTextFromBuffer', async (span: Span) => {
+      try {
+        span.setAttribute('file.filename', filename);
+        span.setAttribute('file.size', buffer.length);
+
+        const ext = filename.split('.').pop()?.toLowerCase();
+
+        if (ext === 'txt') {
+          const text = buffer.toString('utf-8');
+          span.setAttribute('text.length', text.length);
+          this.logger.info({ filename, textLength: text.length }, 'Text extracted from buffer');
+          return text;
+        }
+
+        const error = new BadRequestException(`Формат .${ext} из буфера пока не поддерживается`);
+        recordExceptionSafe(span, error);
+        throw error;
+
+      } catch (error) {
+        recordExceptionSafe(span, error);
+        this.logger.error({ error, filename }, 'Failed to extract text from buffer');
+        throw error;
+      } finally {
+        span.end();
+      }
+    });
+  }
 }

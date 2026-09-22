@@ -7,25 +7,28 @@ const __dirname = dirname(__filename);
 const config = {
   moduleFileExtensions: ['ts', 'js', 'json'],
   rootDir: __dirname,
+  extensionsToTreatAsEsm: ['.ts'],
   transform: {
-    // Добавляем настройки для декораторов
-    '^.+\\.ts$': ['@swc/jest', {
+    '^.+\\.(ts|js)$': ['@swc/jest', {
       jsc: {
         parser: {
           syntax: 'typescript',
-          decorators: true, // <-- Включаем поддержку декораторов
+          decorators: true,
         },
         transform: {
-          legacyDecorator: true, // <-- Используем legacy-режим (как в TS 5.x)
-          decoratorMetadata: true, // <-- Нужно для reflect-metadata в NestJS
+          legacyDecorator: true,
+          decoratorMetadata: true,
         },
       },
     }],
   },
+  transformIgnorePatterns: [
+    'node_modules/(?!(@nestjs|rxjs)/)',
+  ],
   moduleNameMapper: {
     '^@shared/(.*)\\.js$': '<rootDir>/src/shared/$1',
     '^@modules/(.*)\\.js$': '<rootDir>/src/modules/$1',
-    '^(\\.{1,2}/.*)\\.js$': '$1', 
+    '^(\\.{1,2}/.*)\\.js$': '$1',
     '^@shared/(.*)$': '<rootDir>/src/shared/$1',
     '^@modules/(.*)$': '<rootDir>/src/modules/$1',
   },
