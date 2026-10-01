@@ -7,6 +7,7 @@ import { FileParserService } from './file-parser.service.js';
 import { IEmbeddingsService, LOCAL_EMBEDDINGS_SERVICE } from '../../ai/application/embeddings.interface.js';
 import { IDocumentSource, DOCUMENT_SOURCE } from '../domain/document-source.interface.js';
 import { recordExceptionSafe } from '../../../common/utils/trace.utils.js';
+import { documentsSyncedTotal, documentSyncErrors, embeddingGenerationLatency } from '../../../common/metrics/index.js';
 
 @Injectable()
 export class IngestionService {
@@ -16,7 +17,7 @@ export class IngestionService {
         private readonly fileParserService: FileParserService,
         @Inject(LOCAL_EMBEDDINGS_SERVICE) private readonly embeddingsService: IEmbeddingsService,
         private readonly logger: PinoLogger,
-        @Inject(DOCUMENT_SOURCE) private readonly documentSource: IDocumentSource
+        @Inject(DOCUMENT_SOURCE) private readonly documentSource: IDocumentSource,
     ) {
         this.logger.setContext(IngestionService.name);
     }
@@ -41,7 +42,7 @@ export class IngestionService {
                 try {
                     const existing = await this.repo.findDocumentBySourceId(doc.id);
 
-                    // Re-sync логика: пропускаем если документ актуален
+                    // Re-sync логика
                     if (existing && existing.sourceUpdatedAt && existing.status === 'ready') {
                         const dbTime = new Date(existing.sourceUpdatedAt).getTime();
                         const sourceTime = new Date(doc.updatedAt).getTime();
@@ -50,6 +51,7 @@ export class IngestionService {
                             this.logger.debug({ documentId: existing.id, filename: doc.filename }, 'Document is up to date, skipping');
                             continue;
                         }
+
                         this.logger.info({ documentId: existing.id, filename: doc.filename }, 'Document updated in source, re-syncing');
                     }
 
@@ -59,14 +61,12 @@ export class IngestionService {
 
                     let documentId = existing?.id;
                     if (!documentId) {
-                        // TODO: заменить на реальный userId из авторизации
                         const systemUserId = '90cea254-643a-4a86-b671-88d7fd907990';
                         documentId = await this.repo.createDocument(
                             systemUserId, downloaded.filename, downloaded.mimeType, downloaded.buffer.length
                         );
                     }
 
-                    // Сохраняем метаданные источника
                     await this.repo.updateDocumentMetadata(documentId, doc.id, doc.updatedAt);
 
                     const textContent = await this.fileParserService.extractTextFromBuffer(downloaded.buffer, downloaded.filename);
@@ -83,11 +83,19 @@ export class IngestionService {
                     const BATCH_SIZE = 10;
                     const allEmbeddings: number[][] = [];
 
+
+                    // ИНСТРУМЕНТАЦИЯ: Замеряем время генерации эмбеддингов
                     for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
                         const batch = chunks.slice(i, i + BATCH_SIZE);
                         const texts = batch.map(c => c.content);
-                        const embeddings = await this.embeddingsService.embedTexts(texts);
-                        allEmbeddings.push(...embeddings);
+
+                        const stopTimer = embeddingGenerationLatency.startTimer();
+                        try {
+                            const embeddings = await this.embeddingsService.embedTexts(texts);
+                            allEmbeddings.push(...embeddings);
+                        } finally {
+                            stopTimer();
+                        }
                     }
 
                     const chunksWithEmbeddings = chunks.map((chunk, index) => {
@@ -103,21 +111,25 @@ export class IngestionService {
                         };
                     });
 
-                    // saveChunks теперь сам удаляет старые чанки перед записью новых
                     await this.repo.saveChunks(documentId, chunksWithEmbeddings);
                     await this.repo.updateDocumentStatus(documentId, 'ready');
+
+                    // ИНСТРУМЕНТАЦИЯ: Успешная синхронизация
+                    documentsSyncedTotal.inc({ source: this.documentSource.name });
 
                     this.logger.info({ documentId, filename: doc.filename, chunks: chunks.length }, 'Document synced from source');
 
                 } catch (error) {
                     recordExceptionSafe(span, error);
-                    // Добавь этот лог, чтобы видеть полную ошибку
                     this.logger.error({
                         sourceId: doc.id,
                         filename: doc.filename,
                         error: error instanceof Error ? error.message : error,
                         stack: error instanceof Error ? error.stack : undefined
                     }, 'Failed to sync document from source');
+
+                    // ИНСТРУМЕНТАЦИЯ: Ошибка синхронизации
+                    documentSyncErrors.inc({ source: this.documentSource.name });
 
                     try {
                         const existingDoc = await this.repo.findDocumentBySourceId(doc.id);

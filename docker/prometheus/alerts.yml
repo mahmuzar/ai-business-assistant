@@ -1,0 +1,29 @@
+groups:
+  - name: ai-assistant-alerts
+    rules:
+      - alert: AppDown
+        expr: up{job="nestjs-app"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AI Assistant недоступен"
+          description: "Сервис не отвечает более 1 минуты."
+
+      - alert: HighEmbeddingLatency
+        expr: histogram_quantile(0.95, rate(embedding_generation_latency_ms_bucket[5m])) > 2000
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокая задержка генерации эмбеддингов"
+          description: "P95 latency превышает 2000ms в течение 3 минут."
+
+      - alert: SyncErrorsDetected
+        expr: increase(document_sync_errors_total[10m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ошибки синхронизации документов"
+          description: "Обнаружены ошибки sync за последние 10 минут."

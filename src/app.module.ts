@@ -8,6 +8,10 @@ import { ConfigModule } from '@nestjs/config';
 import { DatabaseModule } from './database/database.module.js';
 import { TelegramModule } from '@modules/telegram/telegram.module.js';
 import { KnowledgeModule } from './modules/knowledge/knowledge.module.js';
+import { PrometheusModule } from '@willsoto/nestjs-prometheus';
+
+import './common/metrics/index.js';
+import { HealthModule } from './common/health/health.module.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -22,6 +26,11 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
       cache: true,
       validate: undefined,
     }),
+    PrometheusModule.register({
+      path: '/metrics',
+      defaultMetrics: { enabled: true }, // Включает стандартные метрики Node.js (CPU, RAM, GC)
+    }),
+    HealthModule,
     LoggerModule.forRoot({
       pinoHttp: {
         mixin: () => getOtelContext(),
@@ -51,7 +60,7 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
             }
           ]
         },
-        level: 'info',
+        level: process.env.LOG_LEVEL || 'info',
       },
     }),
     DatabaseModule,

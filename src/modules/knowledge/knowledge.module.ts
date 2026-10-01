@@ -30,6 +30,6 @@ import { DOCUMENT_SOURCE } from './domain/document-source.interface.js';
       inject: [ConfigService],
     },
   ],
-  exports: [RetrievalService, IngestionService],
+  exports: [RetrievalService, IngestionService, DOCUMENT_SOURCE],
 })
-export class KnowledgeModule {}
+export class KnowledgeModule { }

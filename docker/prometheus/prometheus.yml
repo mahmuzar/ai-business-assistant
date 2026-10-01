@@ -1,7 +1,10 @@
 global:
   scrape_interval: 15s
 
+rule_files:
+  - "alerts.yml"
+
 scrape_configs:
   - job_name: 'nestjs-app'
     static_configs:
-      - targets: ['host.docker.internal:3000'] # Для доступа к твоему локальному API
+      - targets: ['host.docker.internal:3000']
