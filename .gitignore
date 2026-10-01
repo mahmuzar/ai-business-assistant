@@ -38,6 +38,10 @@ desktop.ini
 
 # Docker
 .docker/
+# Данные томов, если ты используешь bind mounts вместо named volumes
+prometheus-data/
+grafana-data/
+postgres-data/
 
 # Logs
 logs/
@@ -48,6 +52,8 @@ yarn-error.log*
 
 # Prisma
 prisma/migrations/*/migration_lock.toml
+# Если генерируешь клиент в отдельную папку вне node_modules
+# generated-prisma-client/
 
 # Temporary files
 tmp/
@@ -56,3 +62,6 @@ temp/
 
 # Snyk
 snyk-report.json
+
+# Misc
+.cache/
